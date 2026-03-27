@@ -31,6 +31,7 @@ CONFIG_SCHEMA = cv.Schema(
 
 async def to_code(config):
     parent = await cg.get_variable(config[CONF_ALDE3020_ID])
+    enum_prefix = "esphome::alde3020::Alde3020Switch::"
 
     for key, type_str in SWITCH_TYPES.items():
         if key not in config:
@@ -39,6 +40,4 @@ async def to_code(config):
         var = await switch.new_switch(sw_conf)
         await cg.register_component(var, sw_conf)
         cg.add(var.set_parent(parent))
-        cg.add(var.set_switch_type(
-            getattr(alde3020_ns.class_("Alde3020Switch"), type_str)
-        ))
+        cg.add(var.set_switch_type(cg.RawExpression(f"{enum_prefix}{type_str}")))
