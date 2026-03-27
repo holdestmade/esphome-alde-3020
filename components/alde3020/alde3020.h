@@ -63,7 +63,7 @@ class Alde3020Component : public Component, public uart::UARTDevice {
   void    send_lin_break_();
   void    send_lin_header_(uint8_t lin_id);
   uint8_t lin_pid_(uint8_t id);
-  uint8_t lin_checksum_(uint8_t pid, const uint8_t *data, size_t len);
+  uint8_t lin_checksum_(uint8_t pid, const uint8_t *data, size_t len, bool include_pid);
   void    send_control_frame_();
   void    request_info_frame_();
   void    parse_info_frame_(const uint8_t *data);
@@ -96,6 +96,7 @@ class Alde3020Component : public Component, public uart::UARTDevice {
   bool     ac_available_{false};
   bool     ac_auto_{false};
   bool     pump_running_{false};
+  bool     use_classic_checksum_{true};
 
   // ── Timing ───────────────────────────────────────────────────────────
   uint32_t last_send_ms_{0};
