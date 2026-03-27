@@ -31,10 +31,10 @@ async def to_code(config):
         var = await select.new_select(config[CONF_ELECTRIC_POWER], options=ELECTRIC_OPTIONS)
         await cg.register_component(var, config[CONF_ELECTRIC_POWER])
         cg.add(var.set_parent(parent))
-        cg.add(var.set_select_type(alde3020_ns.class_("Alde3020Select").ELECTRIC_POWER))
+        cg.add(var.set_select_type(cg.RawExpression("esphome::alde3020::Alde3020Select::ELECTRIC_POWER")))
 
     if CONF_WATER_MODE in config:
         var = await select.new_select(config[CONF_WATER_MODE], options=WATER_OPTIONS)
         await cg.register_component(var, config[CONF_WATER_MODE])
         cg.add(var.set_parent(parent))
-        cg.add(var.set_select_type(alde3020_ns.class_("Alde3020Select").WATER_MODE))
+        cg.add(var.set_select_type(cg.RawExpression("esphome::alde3020::Alde3020Select::WATER_MODE")))
