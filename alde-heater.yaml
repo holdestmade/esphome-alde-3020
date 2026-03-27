@@ -19,7 +19,7 @@ esphome:
 esp32:
   board: esp32dev
   framework:
-    type: arduino
+    type: esp-idf
 
 # ── WiFi & API ─────────────────────────────────────────────────────────────
 wifi:
@@ -42,17 +42,15 @@ logger:
 
 # ── External Component ─────────────────────────────────────────────────────
 external_components:
-  - source:
-      type: local
-      path: components   # folder containing the alde3020 component
-    components: [alde3020]
-
+  - source: github://holdestmade/esphome-alde-3020
+    components: [ alde3020 ]
+    
 # ── UART for LIN bus ───────────────────────────────────────────────────────
 uart:
   id: lin_uart
   tx_pin: GPIO17
   rx_pin: GPIO16
-  baud_rate: 9600
+  baud_rate: 19200
   data_bits: 8
   parity: NONE
   stop_bits: 1
@@ -101,11 +99,6 @@ sensor:
     electric_power_kw:
       name: "Alde Electric Power"
       unit_of_measurement: "kW"
-
-  # WiFi signal strength (useful for diagnostics)
-  - platform: wifi_signal
-    name: "WiFi Signal"
-    update_interval: 60s
 
 # ── Switches ──────────────────────────────────────────────────────────────
 switch:
@@ -171,7 +164,3 @@ binary_sensor:
       return id(alde).get_ac_available();
     update_interval: 5s
 
-# ── Optional: restart button ──────────────────────────────────────────────
-button:
-  - platform: restart
-    name: "Alde ESP Restart"
