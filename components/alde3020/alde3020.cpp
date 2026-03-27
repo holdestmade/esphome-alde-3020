@@ -2,6 +2,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 #include <cstring>
+#include <cstdio>
 
 namespace esphome {
 namespace alde3020 {
@@ -109,10 +110,13 @@ void Alde3020Component::send_control_frame_() {
 
 // ── Request info frame (send header only, heater responds) ────────────────
 void Alde3020Component::request_info_frame_() {
-  // Drain anything that may have been echoed/noisy before we start sampling
-  // the info response payload.
+  // Drain stale bytes before requesting status.
   while (this->available()) this->read();
   send_lin_header_(LIN_ID_INFO);
+
+  // Some LIN/UART bridges echo the sent header (BREAK, SYNC, PID) back to RX.
+  // Capture a larger window and later search for a valid 8-byte payload +
+  // checksum sequence instead of assuming the first 9 bytes are the frame.
   rx_pos_      = 0;
   rx_active_   = true;
   rx_start_ms_ = millis();
@@ -179,43 +183,60 @@ void Alde3020Component::loop() {
   // ── Receive bytes from info frame response ──────────────────────────
   if (rx_active_) {
     const uint8_t pid = lin_pid_(LIN_ID_INFO);
-    while (this->available() && rx_pos_ < 9) {
+
+    while (this->available() && rx_pos_ < RX_BUF_SIZE) {
       rx_buf_[rx_pos_++] = this->read();
     }
 
+    // Search for a valid 9-byte info frame anywhere in the capture window.
+    bool frame_found = false;
+    bool frame_classic = false;
+    uint8_t frame_offset = 0;
+
     if (rx_pos_ >= 9) {
-      uint8_t expected_enhanced = lin_checksum_(pid, rx_buf_, 8, true);
-      uint8_t expected_classic  = lin_checksum_(pid, rx_buf_, 8, false);
-      bool matched_enhanced = (rx_buf_[8] == expected_enhanced);
-      bool matched_classic  = (rx_buf_[8] == expected_classic);
-      if (matched_enhanced || matched_classic) {
-        bool new_use_classic = matched_classic && !matched_enhanced;
-        if (new_use_classic != use_classic_checksum_) {
-          use_classic_checksum_ = new_use_classic;
-          ESP_LOGI(TAG, "Detected %s LIN checksum mode",
-                   use_classic_checksum_ ? "classic" : "enhanced");
+      for (uint8_t off = 0; off <= rx_pos_ - 9; off++) {
+        const uint8_t *candidate = &rx_buf_[off];
+        uint8_t expected_enhanced = lin_checksum_(pid, candidate, 8, true);
+        uint8_t expected_classic  = lin_checksum_(pid, candidate, 8, false);
+        bool matched_enhanced = (candidate[8] == expected_enhanced);
+        bool matched_classic  = (candidate[8] == expected_classic);
+
+        if (matched_enhanced || matched_classic) {
+          frame_found = true;
+          frame_classic = matched_classic && !matched_enhanced;
+          frame_offset = off;
+          break;
         }
-        parse_info_frame_(rx_buf_);
-      } else {
-        ESP_LOGW(TAG, "Info frame checksum error: got %02X expected enh=%02X classic=%02X",
-                 rx_buf_[8], expected_enhanced, expected_classic);
+      }
+    }
+
+    if (frame_found) {
+      if (frame_classic != use_classic_checksum_) {
+        use_classic_checksum_ = frame_classic;
+        ESP_LOGI(TAG, "Detected %s LIN checksum mode",
+                 use_classic_checksum_ ? "classic" : "enhanced");
       }
 
+      parse_info_frame_(&rx_buf_[frame_offset]);
       rx_active_ = false;
-      rx_pos_    = 0;
+      rx_pos_ = 0;
       while (this->available()) this->read();
     }
 
     // Timeout
     if (rx_active_ && (millis() - rx_start_ms_ > RX_TIMEOUT_MS)) {
-      if (rx_pos_ >= 9) {
-        uint8_t expected_enhanced = lin_checksum_(pid, rx_buf_, 8, true);
-        uint8_t expected_classic  = lin_checksum_(pid, rx_buf_, 8, false);
-        ESP_LOGW(TAG, "Info frame checksum error: got %02X expected enh=%02X classic=%02X",
-                 rx_buf_[8], expected_enhanced, expected_classic);
-      } else {
-        ESP_LOGW(TAG, "Info frame RX timeout (got %u bytes)", rx_pos_);
+      ESP_LOGW(TAG, "Info frame RX timeout/checksum (got %u bytes, no valid frame)", rx_pos_);
+
+      if (rx_pos_ > 0) {
+        char hex_dump[RX_BUF_SIZE * 3 + 1];
+        uint16_t p = 0;
+        for (uint8_t i = 0; i < rx_pos_ && p + 4 < sizeof(hex_dump); i++) {
+          p += snprintf(&hex_dump[p], sizeof(hex_dump) - p, "%02X ", rx_buf_[i]);
+        }
+        hex_dump[p] = '\0';
+        ESP_LOGV(TAG, "RX raw bytes: %s", hex_dump);
       }
+
       rx_active_ = false;
       rx_pos_    = 0;
       while (this->available()) this->read();
