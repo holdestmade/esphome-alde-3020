@@ -3,6 +3,9 @@
 #include "esphome/core/helpers.h"
 #include <cstring>
 #include <cstdio>
+#ifdef USE_ESP32
+#include "esphome/components/uart/uart_component_esp_idf.h"
+#endif
 
 namespace esphome {
 namespace alde3020 {
@@ -25,25 +28,29 @@ uint8_t Alde3020Component::lin_checksum_(uint8_t pid, const uint8_t *data, size_
 }
 
 // ── Send a LIN break: hold TX low for >13 bit-times ──────────────────────
-// Most LIN-to-TTL modules handle the break automatically when you configure
-// the UART for 13-bit break detection, but many cheap modules just pass
-// bytes through. We emulate a break by briefly setting baud to ~7500 and
-// sending 0x00, which stretches the start bit beyond 13 bit-times at 9600.
-// If your converter has a dedicated BREAK pin, drive that instead.
 void Alde3020Component::send_lin_break_() {
   // Flush any pending bytes
   this->flush();
-  // Write a 0x00 at the normal baud – most LIN TTL bridges accept this
-  // as a valid break when sent with a framing error.
-  // For a software-break: toggle the TX line low for 1ms via GPIO if needed.
-  // Here we rely on the hardware UART generating the break automatically
-  // (works on ESP32 with Serial.sendBreak() or via lin_break GPIO).
-  //
-  // Simple approach: write 0x00 – this gives a long dominant on the bus
-  // which acts as a break for practical purposes with most LIN bridges.
+#ifdef USE_ESP32
+  // Use ESP32's hardware UART break for a reliable LIN break signal.
+  // uart_set_break() drives TX dominant for the specified number of bit-times,
+  // matching the LIN spec requirement of >= 13 dominant bits.
+  // Note: IDFUARTComponent is the ESPHome UART implementation for all ESP32 targets
+  // (both ESP-IDF and Arduino frameworks), so this static_cast is safe on USE_ESP32.
+  uart_port_t uart_num =
+      static_cast<uart::IDFUARTComponent *>(this->parent_)->get_hw_serial_number();
+  // Wait for TX to finish with a bounded timeout (100 ms) to avoid indefinite blocking
+  // in case of hardware fault or misconfiguration.
+  uart_wait_tx_done(uart_num, pdMS_TO_TICKS(100));
+  uart_set_break(uart_num, 13);
+#else
+  // Fallback soft break for non-ESP32 platforms: transmit 0x00 at current baud.
+  // The extended delay helps ensure the dominant period is long enough to
+  // trigger break detection on most LIN-to-TTL converter modules.
   uint8_t brk = 0x00;
   this->write_byte(brk);
-  delayMicroseconds(150);  // ensure break is detected
+  delayMicroseconds(1000);
+#endif
 }
 
 // ── Send sync + PID header ─────────────────────────────────────────────────
