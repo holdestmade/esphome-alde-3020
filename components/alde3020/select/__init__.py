@@ -8,6 +8,7 @@ from .. import alde3020_ns, Alde3020Component, CONF_ALDE3020_ID
 DEPENDENCIES = ["alde3020"]
 
 Alde3020Select = alde3020_ns.class_("Alde3020Select", select.Select, cg.Component)
+Alde3020SelectType = alde3020_ns.enum("Alde3020SelectType")
 
 CONF_ELECTRIC_POWER = "electric_power"
 CONF_WATER_MODE     = "water_mode"
@@ -22,6 +23,10 @@ CONFIG_SCHEMA = cv.Schema(
 
 ELECTRIC_OPTIONS = ["Off", "1 kW", "2 kW", "3 kW"]
 WATER_OPTIONS    = ["Off", "Normal", "Boost", "Auto"]
+SELECT_TYPES = {
+    CONF_ELECTRIC_POWER: Alde3020SelectType.ALDE3020_SELECT_ELECTRIC_POWER,
+    CONF_WATER_MODE: Alde3020SelectType.ALDE3020_SELECT_WATER_MODE,
+}
 
 
 async def to_code(config):
@@ -31,10 +36,10 @@ async def to_code(config):
         var = await select.new_select(config[CONF_ELECTRIC_POWER], options=ELECTRIC_OPTIONS)
         await cg.register_component(var, config[CONF_ELECTRIC_POWER])
         cg.add(var.set_parent(parent))
-        cg.add(var.set_select_type(alde3020_ns.class_("Alde3020Select").ELECTRIC_POWER))
+        cg.add(var.set_select_type(SELECT_TYPES[CONF_ELECTRIC_POWER]))
 
     if CONF_WATER_MODE in config:
         var = await select.new_select(config[CONF_WATER_MODE], options=WATER_OPTIONS)
         await cg.register_component(var, config[CONF_WATER_MODE])
         cg.add(var.set_parent(parent))
-        cg.add(var.set_select_type(alde3020_ns.class_("Alde3020Select").WATER_MODE))
+        cg.add(var.set_select_type(SELECT_TYPES[CONF_WATER_MODE]))
