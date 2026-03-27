@@ -32,29 +32,6 @@ running at 9600 baud, 12V dominant/recessive logic.
 > **Important**: The ESP32 TX/RX are 3.3V. Never connect them directly to the
 > LIN bus — always use the LIN transceiver module to level-shift to 12V.
 
-## Directory Structure
-
-```
-components/
-└── alde3020/
-    ├── __init__.py          ← Core component registration
-    ├── alde3020.h           ← Main component header
-    ├── alde3020.cpp         ← LIN bus logic, frame parsing
-    ├── climate/
-    │   ├── __init__.py      ← Climate sub-component
-    │   └── alde3020_climate.h
-    ├── sensor/
-    │   ├── __init__.py      ← Sensor sub-component
-    │   └── alde3020_sensor.h
-    ├── switch/
-    │   ├── __init__.py      ← Switch sub-component
-    │   └── alde3020_switch.h
-    └── select/
-        ├── __init__.py      ← Select sub-component
-        └── alde3020_select.h
-alde-heater.yaml             ← Example ESPHome configuration
-```
-
 ## Home Assistant Entities Created
 
 | Entity | Type | Description |
