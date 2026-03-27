@@ -112,10 +112,10 @@ void Alde3020Component::request_info_frame_() {
   // Drain anything that may have been echoed/noisy before we start sampling
   // the info response payload.
   while (this->available()) this->read();
+  send_lin_header_(LIN_ID_INFO);
   rx_pos_      = 0;
   rx_active_   = true;
   rx_start_ms_ = millis();
-  send_lin_header_(LIN_ID_INFO);
 }
 
 // ── Parse 8-byte info frame payload ───────────────────────────────────────
@@ -179,36 +179,31 @@ void Alde3020Component::loop() {
   // ── Receive bytes from info frame response ──────────────────────────
   if (rx_active_) {
     const uint8_t pid = lin_pid_(LIN_ID_INFO);
-    while (this->available()) {
-      uint8_t byte = this->read();
+    while (this->available() && rx_pos_ < 9) {
+      rx_buf_[rx_pos_++] = this->read();
+    }
 
-      // Keep a rolling 9-byte window (8 data bytes + checksum). This lets us
-      // re-sync even if echoed header bytes/noise precede the actual payload.
-      if (rx_pos_ < 9) {
-        rx_buf_[rx_pos_++] = byte;
-      } else {
-        memmove(rx_buf_, rx_buf_ + 1, 8);
-        rx_buf_[8] = byte;
-      }
-
-      if (rx_pos_ >= 9) {
-        uint8_t expected_enhanced = lin_checksum_(pid, rx_buf_, 8, true);
-        uint8_t expected_classic  = lin_checksum_(pid, rx_buf_, 8, false);
-        bool matched_enhanced = (rx_buf_[8] == expected_enhanced);
-        bool matched_classic  = (rx_buf_[8] == expected_classic);
-        if (matched_enhanced || matched_classic) {
-          bool new_use_classic = matched_classic && !matched_enhanced;
-          if (new_use_classic != use_classic_checksum_) {
-            use_classic_checksum_ = new_use_classic;
-            ESP_LOGI(TAG, "Detected %s LIN checksum mode",
-                     use_classic_checksum_ ? "classic" : "enhanced");
-          }
-          parse_info_frame_(rx_buf_);
-          rx_active_ = false;
-          rx_pos_    = 0;
-          break;
+    if (rx_pos_ >= 9) {
+      uint8_t expected_enhanced = lin_checksum_(pid, rx_buf_, 8, true);
+      uint8_t expected_classic  = lin_checksum_(pid, rx_buf_, 8, false);
+      bool matched_enhanced = (rx_buf_[8] == expected_enhanced);
+      bool matched_classic  = (rx_buf_[8] == expected_classic);
+      if (matched_enhanced || matched_classic) {
+        bool new_use_classic = matched_classic && !matched_enhanced;
+        if (new_use_classic != use_classic_checksum_) {
+          use_classic_checksum_ = new_use_classic;
+          ESP_LOGI(TAG, "Detected %s LIN checksum mode",
+                   use_classic_checksum_ ? "classic" : "enhanced");
         }
+        parse_info_frame_(rx_buf_);
+      } else {
+        ESP_LOGW(TAG, "Info frame checksum error: got %02X expected enh=%02X classic=%02X",
+                 rx_buf_[8], expected_enhanced, expected_classic);
       }
+
+      rx_active_ = false;
+      rx_pos_    = 0;
+      while (this->available()) this->read();
     }
 
     // Timeout
@@ -223,7 +218,6 @@ void Alde3020Component::loop() {
       }
       rx_active_ = false;
       rx_pos_    = 0;
-      // Drain any stale bytes
       while (this->available()) this->read();
     }
   }
@@ -234,7 +228,7 @@ void Alde3020Component::loop() {
     if (now - last_send_ms_ >= SEND_INTERVAL_MS) {
       last_send_ms_ = now;
       send_control_frame_();
-      delayMicroseconds(500);   // brief gap between frames
+      delayMicroseconds(3000);   // gap between control write and info poll
       request_info_frame_();
     }
   }
