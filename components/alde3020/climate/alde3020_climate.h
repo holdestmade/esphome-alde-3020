@@ -19,7 +19,7 @@ class Alde3020Climate : public climate::Climate, public Component {
     auto t = climate::ClimateTraits();
     t.add_supported_mode(climate::CLIMATE_MODE_HEAT);
     t.add_supported_mode(climate::CLIMATE_MODE_OFF);
-    t.set_supports_current_temperature(true);
+    t.add_feature_flags(climate::CLIMATE_FLAG_SUPPORTS_CURRENT_TEMPERATURE);
     t.set_visual_min_temperature(5.0f);
     t.set_visual_max_temperature(30.0f);
     t.set_visual_temperature_step(0.5f);
