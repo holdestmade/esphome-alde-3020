@@ -1,6 +1,7 @@
 #include "alde3020.h"
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
+#include <cstring>
 
 namespace esphome {
 namespace alde3020 {
@@ -107,6 +108,9 @@ void Alde3020Component::send_control_frame_() {
 
 // ── Request info frame (send header only, heater responds) ────────────────
 void Alde3020Component::request_info_frame_() {
+  // Drain anything that may have been echoed/noisy before we start sampling
+  // the info response payload.
+  while (this->available()) this->read();
   rx_pos_      = 0;
   rx_active_   = true;
   rx_start_ms_ = millis();
@@ -173,26 +177,39 @@ void Alde3020Component::dump_config() {
 void Alde3020Component::loop() {
   // ── Receive bytes from info frame response ──────────────────────────
   if (rx_active_) {
-    while (this->available() && rx_pos_ < 9) {
-      rx_buf_[rx_pos_++] = this->read();
-    }
-    if (rx_pos_ >= 9) {
-      // We have 8 data bytes + 1 checksum byte
-      // Validate checksum
-      uint8_t pid = lin_pid_(LIN_ID_INFO);
-      uint8_t expected_chk = lin_checksum_(pid, rx_buf_, 8);
-      if (rx_buf_[8] == expected_chk) {
-        parse_info_frame_(rx_buf_);
+    const uint8_t pid = lin_pid_(LIN_ID_INFO);
+    while (this->available()) {
+      uint8_t byte = this->read();
+
+      // Keep a rolling 9-byte window (8 data bytes + checksum). This lets us
+      // re-sync even if echoed header bytes/noise precede the actual payload.
+      if (rx_pos_ < 9) {
+        rx_buf_[rx_pos_++] = byte;
       } else {
-        ESP_LOGW(TAG, "Info frame checksum error: got %02X expected %02X",
-                 rx_buf_[8], expected_chk);
+        memmove(rx_buf_, rx_buf_ + 1, 8);
+        rx_buf_[8] = byte;
       }
-      rx_active_ = false;
-      rx_pos_    = 0;
+
+      if (rx_pos_ >= 9) {
+        uint8_t expected_chk = lin_checksum_(pid, rx_buf_, 8);
+        if (rx_buf_[8] == expected_chk) {
+          parse_info_frame_(rx_buf_);
+          rx_active_ = false;
+          rx_pos_    = 0;
+          break;
+        }
+      }
     }
+
     // Timeout
     if (rx_active_ && (millis() - rx_start_ms_ > RX_TIMEOUT_MS)) {
-      ESP_LOGW(TAG, "Info frame RX timeout (got %u bytes)", rx_pos_);
+      if (rx_pos_ >= 9) {
+        uint8_t expected_chk = lin_checksum_(pid, rx_buf_, 8);
+        ESP_LOGW(TAG, "Info frame checksum error: got %02X expected %02X",
+                 rx_buf_[8], expected_chk);
+      } else {
+        ESP_LOGW(TAG, "Info frame RX timeout (got %u bytes)", rx_pos_);
+      }
       rx_active_ = false;
       rx_pos_    = 0;
       // Drain any stale bytes
