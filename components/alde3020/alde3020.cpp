@@ -1,6 +1,7 @@
 #include "alde3020.h"
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
+#include <cstring>
 
 namespace esphome {
 namespace alde3020 {
