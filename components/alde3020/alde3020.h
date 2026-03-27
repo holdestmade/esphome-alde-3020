@@ -102,8 +102,9 @@ class Alde3020Component : public Component, public uart::UARTDevice {
   uint32_t last_send_ms_{0};
   static const uint32_t SEND_INTERVAL_MS = 500;
 
-  // ── RX buffer for info frame (8 bytes + checksum) ────────────────────
-  uint8_t  rx_buf_[9]{};
+  // ── RX buffer for info frame capture (can include echoed header bytes) ──
+  static const uint8_t RX_BUF_SIZE = 32;
+  uint8_t  rx_buf_[RX_BUF_SIZE]{};
   uint8_t  rx_pos_{0};
   bool     rx_active_{false};
   uint32_t rx_start_ms_{0};
