@@ -13,9 +13,9 @@ uint8_t Alde3020Component::lin_pid_(uint8_t id) {
   return (id & 0x3F) | (p0 << 6) | (p1 << 7);
 }
 
-// ── LIN enhanced checksum (includes PID) ──────────────────────────────────
-uint8_t Alde3020Component::lin_checksum_(uint8_t pid, const uint8_t *data, size_t len) {
-  uint16_t sum = pid;
+// ── LIN checksum ───────────────────────────────────────────────────────────
+uint8_t Alde3020Component::lin_checksum_(uint8_t pid, const uint8_t *data, size_t len, bool include_pid) {
+  uint16_t sum = include_pid ? pid : 0;
   for (size_t i = 0; i < len; i++) {
     sum += data[i];
     if (sum > 0xFF) sum -= 0xFF;
@@ -96,14 +96,15 @@ void Alde3020Component::send_control_frame_() {
   data[7] = 0xFF;
 
   uint8_t pid = lin_pid_(LIN_ID_CONTROL);
-  uint8_t chk = lin_checksum_(pid, data, 8);
+  uint8_t chk = lin_checksum_(pid, data, 8, !use_classic_checksum_);
 
   send_lin_header_(LIN_ID_CONTROL);
   for (int i = 0; i < 8; i++) this->write_byte(data[i]);
   this->write_byte(chk);
 
-  ESP_LOGV(TAG, "TX Control: %02X %02X %02X %02X %02X %02X %02X %02X [chk=%02X]",
-           data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], chk);
+  ESP_LOGV(TAG, "TX Control: %02X %02X %02X %02X %02X %02X %02X %02X [chk=%02X %s]",
+           data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], chk,
+           use_classic_checksum_ ? "classic" : "enhanced");
 }
 
 // ── Request info frame (send header only, heater responds) ────────────────
@@ -191,8 +192,17 @@ void Alde3020Component::loop() {
       }
 
       if (rx_pos_ >= 9) {
-        uint8_t expected_chk = lin_checksum_(pid, rx_buf_, 8);
-        if (rx_buf_[8] == expected_chk) {
+        uint8_t expected_enhanced = lin_checksum_(pid, rx_buf_, 8, true);
+        uint8_t expected_classic  = lin_checksum_(pid, rx_buf_, 8, false);
+        bool matched_enhanced = (rx_buf_[8] == expected_enhanced);
+        bool matched_classic  = (rx_buf_[8] == expected_classic);
+        if (matched_enhanced || matched_classic) {
+          bool new_use_classic = matched_classic && !matched_enhanced;
+          if (new_use_classic != use_classic_checksum_) {
+            use_classic_checksum_ = new_use_classic;
+            ESP_LOGI(TAG, "Detected %s LIN checksum mode",
+                     use_classic_checksum_ ? "classic" : "enhanced");
+          }
           parse_info_frame_(rx_buf_);
           rx_active_ = false;
           rx_pos_    = 0;
@@ -204,9 +214,10 @@ void Alde3020Component::loop() {
     // Timeout
     if (rx_active_ && (millis() - rx_start_ms_ > RX_TIMEOUT_MS)) {
       if (rx_pos_ >= 9) {
-        uint8_t expected_chk = lin_checksum_(pid, rx_buf_, 8);
-        ESP_LOGW(TAG, "Info frame checksum error: got %02X expected %02X",
-                 rx_buf_[8], expected_chk);
+        uint8_t expected_enhanced = lin_checksum_(pid, rx_buf_, 8, true);
+        uint8_t expected_classic  = lin_checksum_(pid, rx_buf_, 8, false);
+        ESP_LOGW(TAG, "Info frame checksum error: got %02X expected enh=%02X classic=%02X",
+                 rx_buf_[8], expected_enhanced, expected_classic);
       } else {
         ESP_LOGW(TAG, "Info frame RX timeout (got %u bytes)", rx_pos_);
       }
