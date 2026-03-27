@@ -133,34 +133,26 @@ select:
       # Options: Off, Normal, Boost, Auto
 
 # ── Status Binary Sensors (read-only, published via template) ─────────────
-# These reflect flags from the Alde info frame.
-# ESPHome doesn't have a native "binary_sensor from component callback"
-# so we use template sensors updated by a lambda on an interval.
-
 binary_sensor:
   - platform: template
     name: "Alde Pump Running"
     lambda: |-
       return id(alde).get_pump_running();
-    update_interval: 2s
 
   - platform: template
     name: "Alde Error"
     device_class: problem
     lambda: |-
       return id(alde).get_error_present();
-    update_interval: 5s
 
   - platform: template
     name: "Alde Gas Valve Open"
     lambda: |-
       return id(alde).get_gas_valve_open();
-    update_interval: 2s
 
   - platform: template
     name: "Alde AC Power Available"
     device_class: power
     lambda: |-
       return id(alde).get_ac_available();
-    update_interval: 5s
 
