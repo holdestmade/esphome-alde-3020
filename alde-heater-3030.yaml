@@ -1,0 +1,139 @@
+# ── Alde 3030 Plus Heater – ESPHome Configuration ───────────────────────────
+# ESP32 + LIN-to-TTL converter (e.g. MCP2025 breakout or TJA1020)
+#
+# Wiring:
+#   ESP32 TX2 (GPIO17) → LIN module TX
+#   ESP32 RX2 (GPIO16) → LIN module RX
+#   LIN module LIN pin → Alde 3030 Plus LIN wire (yellow CI-bus connector)
+#   GND                → shared ground
+#   12V                → LIN module power (from caravan 12V bus)
+#
+# The LIN bus runs at 19200 baud.  The module handles dominant/recessive
+# level shifting between the single-wire LIN bus and 3.3V TTL UART.
+# ─────────────────────────────────────────────────────────────────────────────
+
+esphome:
+  name: alde-heater-3030
+  friendly_name: "Alde 3030 Plus Heater"
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# ── WiFi & API ─────────────────────────────────────────────────────────────
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Alde 3030 Fallback"
+    password: !secret ap_password
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+logger:
+  level: DEBUG   # Set to INFO once working
+
+# ── External Component ─────────────────────────────────────────────────────
+external_components:
+  - source: github://holdestmade/esphome-alde-3020
+    components: [ alde3030 ]
+
+# ── UART for LIN bus ───────────────────────────────────────────────────────
+uart:
+  id: lin_uart
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 19200
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+
+# ── Alde 3030 Plus Core Component ─────────────────────────────────────────
+alde3030:
+  id: alde
+  uart_id: lin_uart
+
+# ── Climate Entity (Thermostat) ───────────────────────────────────────────
+climate:
+  - platform: alde3030
+    alde3030_id: alde
+    name: "Alde Heating"
+
+# ── Temperature Sensors ────────────────────────────────────────────────────
+sensor:
+  - platform: alde3030
+    alde3030_id: alde
+
+    zone1_temperature:
+      name: "Alde Zone 1 Temperature"
+      id: alde_zone1_temp
+
+    outdoor_temperature:
+      name: "Alde Outdoor Temperature"
+      id: alde_outdoor_temp
+
+    zone1_target_temperature:
+      name: "Alde Zone 1 Target"
+
+    electric_power_kw:
+      name: "Alde Electric Power"
+      unit_of_measurement: "kW"
+
+# ── Switches ──────────────────────────────────────────────────────────────
+switch:
+  - platform: alde3030
+    alde3030_id: alde
+
+    panel_on:
+      name: "Alde Panel"
+      id: alde_panel
+
+    gas_enable:
+      name: "Alde Gas Heating"
+      id: alde_gas
+
+# ── Select Dropdowns ──────────────────────────────────────────────────────
+select:
+  - platform: alde3030
+    alde3030_id: alde
+
+    electric_power:
+      name: "Alde Electric Power Level"
+      id: alde_elec_power
+      # Options: Off, 1 kW, 2 kW, 3 kW
+
+    water_mode:
+      name: "Alde Water Heating Mode"
+      id: alde_water_mode
+      # Options: Off, On, Boost
+
+# ── Status Binary Sensors (read-only, published via template) ─────────────
+binary_sensor:
+  - platform: template
+    name: "Alde Pump Running"
+    lambda: |-
+      return id(alde).get_pump_running();
+
+  - platform: template
+    name: "Alde Error"
+    device_class: problem
+    lambda: |-
+      return id(alde).get_error_present();
+
+  - platform: template
+    name: "Alde Gas Valve Open"
+    lambda: |-
+      return id(alde).get_gas_valve_open();
+
+  - platform: template
+    name: "Alde AC Power Available"
+    device_class: power
+    lambda: |-
+      return id(alde).get_ac_available();
