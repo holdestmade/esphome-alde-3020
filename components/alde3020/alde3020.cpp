@@ -29,26 +29,22 @@ uint8_t Alde3020Component::lin_checksum_(uint8_t pid, const uint8_t *data, size_
 
 // ── Send a LIN break: hold TX low for >13 bit-times ──────────────────────
 void Alde3020Component::send_lin_break_() {
-  // Flush any pending bytes
   this->flush();
 #ifdef USE_ESP32
-  // Use ESP32's hardware UART break for a reliable LIN break signal.
-  // uart_set_break() drives TX dominant for the specified number of bit-times,
-  // matching the LIN spec requirement of >= 13 dominant bits.
-  // Note: IDFUARTComponent is the ESPHome UART implementation for all ESP32 targets
-  // (both ESP-IDF and Arduino frameworks), so this static_cast is safe on USE_ESP32.
-  uart_port_t uart_num =
-      static_cast<uart::IDFUARTComponent *>(this->parent_)->get_hw_serial_number();
-  // Wait for TX to finish with a bounded timeout (100 ms) to avoid indefinite blocking
-  // in case of hardware fault or misconfiguration.
+  // get_hw_serial_number() returns uint8_t; cast to uart_port_t explicitly.
+  uart_port_t uart_num = static_cast<uart_port_t>(
+      static_cast<uart::IDFUARTComponent *>(this->parent_)->get_hw_serial_number());
   uart_wait_tx_done(uart_num, pdMS_TO_TICKS(100));
-  uart_set_break(uart_num, 13);
+  // uart_set_break() is only available in ESP-IDF ≥5.0.  Use a portable
+  // baud-rate-swap instead: at 4800 baud a single 0x00 byte holds TX
+  // dominant for ~2.1 ms, which is ≈40 bit-times at 19200 baud (spec
+  // requires >13), then restore the original rate.
+  uart_set_baudrate(uart_num, 4800);
+  this->write_byte(0x00);
+  uart_wait_tx_done(uart_num, pdMS_TO_TICKS(20));
+  uart_set_baudrate(uart_num, 19200);
 #else
-  // Fallback soft break for non-ESP32 platforms: transmit 0x00 at current baud.
-  // The extended delay helps ensure the dominant period is long enough to
-  // trigger break detection on most LIN-to-TTL converter modules.
-  uint8_t brk = 0x00;
-  this->write_byte(brk);
+  this->write_byte(0x00);
   delayMicroseconds(1000);
 #endif
 }
