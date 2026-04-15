@@ -31,13 +31,20 @@ uint8_t Alde3030Component::lin_checksum_(uint8_t pid, const uint8_t *data, size_
 void Alde3030Component::send_lin_break_() {
   this->flush();
 #ifdef USE_ESP32
-  uart_port_t uart_num =
-      static_cast<uart::IDFUARTComponent *>(this->parent_)->get_hw_serial_number();
+  // get_hw_serial_number() returns uint8_t; cast to uart_port_t explicitly.
+  uart_port_t uart_num = static_cast<uart_port_t>(
+      static_cast<uart::IDFUARTComponent *>(this->parent_)->get_hw_serial_number());
   uart_wait_tx_done(uart_num, pdMS_TO_TICKS(100));
-  uart_set_break(uart_num, 13);
+  // uart_set_break() is only available in ESP-IDF ≥5.0.  Use a portable
+  // baud-rate-swap instead: at 4800 baud a single 0x00 byte holds TX
+  // dominant for ~2.1 ms, which is ≈40 bit-times at 19200 baud (spec
+  // requires >13), then restore the original rate.
+  uart_set_baudrate(uart_num, 4800);
+  this->write_byte(0x00);
+  uart_wait_tx_done(uart_num, pdMS_TO_TICKS(20));
+  uart_set_baudrate(uart_num, 19200);
 #else
-  uint8_t brk = 0x00;
-  this->write_byte(brk);
+  this->write_byte(0x00);
   delayMicroseconds(1000);
 #endif
 }
